@@ -1,0 +1,338 @@
+package calenderapp;
+
+import java.io.*;
+import java.time.*;
+import java.util.*;
+
+public class EventManager {
+    private List<Event> events;
+    private int nextEventId;
+    private AdditionalFieldManager additionalFields;
+
+    public EventManager() {
+        events = FileManager.readEvents();
+        nextEventId = getNextEventId();
+        additionalFields = new AdditionalFieldManager();
+    }
+
+    // Create a new single event
+    public void createEvent(String title, String desc, LocalDateTime start, LocalDateTime end) {
+        int id = nextEventId++;
+        Event e = new Event(id, title, desc, start, end);
+        events.add(e);
+        FileManager.saveEvent(e);
+    }
+
+    // Create event with additional fields
+    public void createEvent(String title, String desc, LocalDateTime start, LocalDateTime end,
+                           String location, String category, String attendees, int reminderMinutes) {
+        int id = nextEventId++;
+        Event e = new Event(id, title, desc, start, end);
+        e.setReminderMinutes(reminderMinutes);
+        events.add(e);
+        
+        // Save additional fields
+        if (location != null || category != null || attendees != null) {
+            additionalFields.saveFields(id, location, category, attendees);
+        }
+        
+        FileManager.saveEvent(e);
+    }
+
+    // Add a recurring event (creates all occurrences)
+    public void addRecurringEvent(Event event) {
+        int seriesId = nextEventId;
+        LocalDateTime nextStart = event.getStart();
+        LocalDateTime nextEnd = event.getEnd();
+        long durationMinutes = event.getDurationMinutes();
+
+        for (int i = 0; i < event.getRecurrenceCount(); i++) {
+            Event e = new Event(nextEventId++, event.getTitle(), event.getDescription(), nextStart, nextEnd);
+            e.setRecurring(true);
+            e.setRecurrenceType(event.getRecurrenceType());
+            e.setRecurrenceCount(event.getRecurrenceCount());
+            e.setSeriesId(seriesId);
+            e.setReminderMinutes(event.getReminderMinutes());
+            events.add(e);
+
+            // Advance to next occurrence
+            switch (event.getRecurrenceType()) {
+                case "DAILY" -> {
+                    nextStart = nextStart.plusDays(1);
+                    nextEnd = nextStart.plusMinutes(durationMinutes);
+                }
+                case "WEEKLY" -> {
+                    nextStart = nextStart.plusWeeks(1);
+                    nextEnd = nextStart.plusMinutes(durationMinutes);
+                }
+                case "MONTHLY" -> {
+                    nextStart = nextStart.plusMonths(1);
+                    nextEnd = nextStart.plusMinutes(durationMinutes);
+                }
+            }
+        }
+
+        saveAllEvents();
+    }
+
+    // Update a single event by ID
+    public void updateEvent(int id, String newTitle, String newDesc, LocalDateTime newStart, LocalDateTime newEnd) {
+        for (Event e : events) {
+            if (e.getEventId() == id) {
+                e.setTitle(newTitle);
+                e.setDescription(newDesc);
+                e.setStart(newStart);
+                e.setEnd(newEnd);
+                saveAllEvents();
+                return;
+            }
+        }
+        System.err.println("Event ID not found: " + id);
+    }
+    
+    // Update event with additional fields
+    public void updateEvent(int id, String newTitle, String newDesc, LocalDateTime newStart, LocalDateTime newEnd,
+                           String location, String category, String attendees, int reminderMinutes) {
+        for (Event e : events) {
+            if (e.getEventId() == id) {
+                e.setTitle(newTitle);
+                e.setDescription(newDesc);
+                e.setStart(newStart);
+                e.setEnd(newEnd);
+                e.setReminderMinutes(reminderMinutes);
+                
+                // Update additional fields
+                if (location != null || category != null || attendees != null) {
+                    additionalFields.saveFields(id, location, category, attendees);
+                }
+                
+                saveAllEvents();
+                return;
+            }
+        }
+        System.err.println("Event ID not found: " + id);
+    }
+
+    // Update all events in a recurring series - FIXED
+    public void updateRecurringSeries(int seriesId, String newTitle, String newDesc, int newReminderMinutes) {
+        boolean found = false;
+        for (Event e : events) {
+            if (e.getSeriesId() == seriesId) {
+                e.setTitle(newTitle);
+                e.setDescription(newDesc);
+                e.setReminderMinutes(newReminderMinutes);
+                found = true;
+            }
+        }
+        if (found) {
+            saveAllEvents();
+        }
+    }
+
+    // Delete single event
+    public void deleteEvent(int id) {
+        events.removeIf(e -> e.getEventId() == id);
+        // Also remove from additional fields
+        additionalFields.getFields(id); // Check if exists
+        saveAllEvents();
+    }
+
+    // Delete a recurring series
+    public void deleteRecurringEvent(Event event) {
+        if (event.getSeriesId() != 0) {
+            events.removeIf(e -> e.getSeriesId() == event.getSeriesId());
+        } else {
+            deleteEvent(event.getEventId());
+        }
+        saveAllEvents();
+    }
+
+    // Delete a single occurrence
+    public void deleteSingleOccurrence(Event event) {
+        deleteEvent(event.getEventId());
+    }
+
+    // Get event by ID
+    public Event getEventById(int id) {
+        return events.stream()
+                .filter(e -> e.getEventId() == id)
+                .findFirst()
+                .orElse(null);
+    }
+
+    // Conflict check excluding a specific event
+    public boolean hasConflictExcludingEvent(LocalDateTime newStart, LocalDateTime newEnd, int excludeId) {
+        for (Event e : events) {
+            if (e.getEventId() == excludeId) continue;
+            if (newStart.isBefore(e.getEnd()) && newEnd.isAfter(e.getStart())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    // Conflict check for new events
+    public boolean hasConflict(LocalDateTime newStart, LocalDateTime newEnd) {
+        return hasConflictExcludingEvent(newStart, newEnd, -1);
+    }
+
+    // Search events by date range
+    public List<Event> searchByDateRange(LocalDate start, LocalDate end) {
+        List<Event> results = new ArrayList<>();
+        for (Event e : events) {
+            LocalDate eventDate = e.getStart().toLocalDate();
+            if (!eventDate.isBefore(start) && !eventDate.isAfter(end)) {
+                results.add(e);
+            }
+        }
+        return results;
+    }
+    
+    // Search events by keyword (title, description, or additional fields)
+    public List<Event> searchByKeyword(String keyword) {
+        List<Event> results = new ArrayList<>();
+        String lowerKeyword = keyword.toLowerCase();
+        
+        for (Event e : events) {
+            if (e.getTitle().toLowerCase().contains(lowerKeyword) ||
+                e.getDescription().toLowerCase().contains(lowerKeyword)) {
+                results.add(e);
+            }
+        }
+        
+        // Also search in additional fields
+        List<Integer> additionalFieldIds = additionalFields.searchIds(keyword);
+        for (int id : additionalFieldIds) {
+            Event e = getEventById(id);
+            if (e != null && !results.contains(e)) {
+                results.add(e);
+            }
+        }
+        
+        return results;
+    }
+
+    // Get events for a specific date
+    public List<Event> getEventsForDate(LocalDate date) {
+        return events.stream()
+                .filter(e -> e.getStart().toLocalDate().equals(date))
+                .sorted(Comparator.comparing(Event::getStart))
+                .toList();
+    }
+
+    // Backup events to a CSV file
+    public void backupEvents(String path) {
+        try (PrintWriter writer = new PrintWriter(new FileWriter(path))) {
+            for (Event e : events) {
+                writer.println(e.getEventId() + "||" + e.getTitle() + "||" + 
+                              e.getDescription() + "||" + e.getStart() + "||" + 
+                              e.getEnd() + "||" + e.isRecurring() + "||" + 
+                              e.getRecurrenceType() + "||" + e.getRecurrenceCount() + "||" + 
+                              e.getSeriesId() + "||" + e.getReminderMinutes());
+            }
+            additionalFields.backup(path.replace(".csv", "_additional.csv"));
+            System.out.println("Backup completed successfully to: " + path);
+        } catch (IOException ex) {
+            System.err.println("Backup failed: " + ex.getMessage());
+        }
+    }
+
+    // Restore events from a CSV file
+    public void restoreEvents(String path) {
+        events.clear();
+        nextEventId = 1;
+        try (BufferedReader reader = new BufferedReader(new FileReader(path))) {
+            String line;
+            while ((line = reader.readLine()) != null) {
+                String[] parts = line.split("\\|\\|");
+                if (parts.length != 10) continue;
+                
+                int id = Integer.parseInt(parts[0].trim());
+                String title = parts[1];
+                String desc = parts[2];
+                LocalDateTime start = LocalDateTime.parse(parts[3]);
+                LocalDateTime end = LocalDateTime.parse(parts[4]);
+                boolean recurring = Boolean.parseBoolean(parts[5]);
+                String recurrenceType = parts[6];
+                int recurrenceCount = Integer.parseInt(parts[7].trim());
+                int seriesId = Integer.parseInt(parts[8].trim());
+                int reminderMinutes = Integer.parseInt(parts[9].trim());
+
+                Event e = new Event(id, title, desc, start, end);
+                e.setRecurring(recurring);
+                e.setRecurrenceType(recurrenceType);
+                e.setRecurrenceCount(recurrenceCount);
+                e.setSeriesId(seriesId);
+                e.setReminderMinutes(reminderMinutes);
+
+                events.add(e);
+                nextEventId = Math.max(nextEventId, id + 1);
+            }
+            additionalFields.restore(path.replace(".csv", "_additional.csv"));
+            saveAllEvents();
+            System.out.println("Restore completed successfully from: " + path);
+        } catch (IOException ex) {
+            System.err.println("Restore failed: " + ex.getMessage());
+        }
+    }
+
+    // Statistics
+    public int getTotalEvents() {
+        return events.size();
+    }
+
+    public int getRecurringEventCount() {
+        return (int) events.stream().filter(Event::isRecurring).count();
+    }
+
+    public String getBusiestDay() {
+        Map<DayOfWeek, Long> map = new HashMap<>();
+        for (Event e : events) {
+            DayOfWeek day = e.getStart().getDayOfWeek();
+            map.put(day, map.getOrDefault(day, 0L) + 1);
+        }
+        return map.entrySet().stream()
+                .max(Map.Entry.comparingByValue())
+                .map(e -> e.getKey().toString())
+                .orElse("N/A");
+    }
+    
+    public Map<String, Integer> getEventsByCategory() {
+        Map<String, Integer> categoryCount = new HashMap<>();
+        for (Event e : events) {
+            AdditionalFieldManager.AdditionalFields fields = additionalFields.getFields(e.getEventId());
+            if (fields != null && fields.category != null && !fields.category.isEmpty()) {
+                categoryCount.merge(fields.category, 1, Integer::sum);
+            }
+        }
+        return categoryCount;
+    }
+
+    // Utilities
+    public int getNextEventId() {
+        return events.stream()
+                .mapToInt(Event::getEventId)
+                .max()
+                .orElse(0) + 1;
+    }
+
+    public List<Event> getEvents() {
+        return new ArrayList<>(events);
+    }
+    
+    public AdditionalFieldManager getAdditionalFieldManager() {
+        return additionalFields;
+    }
+
+    private void saveAllEvents() {
+        FileManager.saveEvents(events);
+    }
+
+    public void viewAllEvents() {
+        System.out.println("=== All Events ===");
+        for (Event e : events) {
+            System.out.println(e.getEventId() + ": " + e.getTitle() + 
+                             " (" + e.getStart() + " to " + e.getEnd() + ")");
+        }
+    }
+}
