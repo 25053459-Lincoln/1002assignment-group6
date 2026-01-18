@@ -1,0 +1,133 @@
+package calenderapp;
+
+import java.time.LocalDateTime;
+import java.time.Duration;
+
+public class Event {
+    private int eventId;
+    private String title;
+    private String description;
+    private LocalDateTime start;
+    private LocalDateTime end;
+    private boolean recurring;
+    private String recurrenceType;
+    private int recurrenceCount;
+    private int seriesId;
+    private int reminderMinutes;
+
+    // Full constructor
+    public Event(int eventId, String title, String description, LocalDateTime start, LocalDateTime end) {
+        if (title == null || title.trim().isEmpty()) {
+            throw new IllegalArgumentException("Title cannot be empty");
+        }
+        if (start == null || end == null) {
+            throw new IllegalArgumentException("Start and end times cannot be null");
+        }
+        if (end.isBefore(start) || end.equals(start)) {
+            throw new IllegalArgumentException("End time must be after start time");
+        }
+        
+        this.eventId = eventId;
+        this.title = title;
+        this.description = description == null ? "" : description;
+        this.start = start;
+        this.end = end;
+        this.recurring = false;
+        this.recurrenceType = "DAILY";
+        this.recurrenceCount = 0;
+        this.seriesId = 0;
+        this.reminderMinutes = 0;
+    }
+
+    // Minimal constructor
+    public Event(String title, String description, LocalDateTime start) {
+        this(0, title, description, start, start.plusHours(1));
+    }
+
+    // Getters
+    public int getEventId() { return eventId; }
+    public String getTitle() { return title; }
+    public String getDescription() { return description; }
+    public LocalDateTime getStart() { return start; }
+    public LocalDateTime getEnd() { return end; }
+    public boolean isRecurring() { return recurring; }
+    public String getRecurrenceType() { return recurrenceType; }
+    public int getRecurrenceCount() { return recurrenceCount; }
+    public int getSeriesId() { return seriesId; }
+    public int getReminderMinutes() { return reminderMinutes; }
+
+    // Setters with validation
+    public void setEventId(int eventId) { 
+        this.eventId = eventId; 
+    }
+    
+    public void setTitle(String title) { 
+        if (title == null || title.trim().isEmpty()) {
+            throw new IllegalArgumentException("Title cannot be empty");
+        }
+        this.title = title; 
+    }
+    
+    public void setDescription(String description) { 
+        this.description = description == null ? "" : description; 
+    }
+    
+    public void setStart(LocalDateTime start) { 
+        if (start == null) {
+            throw new IllegalArgumentException("Start time cannot be null");
+        }
+        if (this.end != null && start.isAfter(this.end)) {
+            throw new IllegalArgumentException("Start time must be before end time");
+        }
+        this.start = start; 
+    }
+    
+    public void setEnd(LocalDateTime end) { 
+        if (end == null) {
+            throw new IllegalArgumentException("End time cannot be null");
+        }
+        if (this.start != null && (end.isBefore(this.start) || end.equals(this.start))) {
+            throw new IllegalArgumentException("End time must be after start time");
+        }
+        this.end = end; 
+    }
+    
+    public void setRecurring(boolean recurring) { 
+        this.recurring = recurring; 
+    }
+    
+    public void setRecurrenceType(String type) { 
+        if (type != null && !type.matches("DAILY|WEEKLY|MONTHLY")) {
+            throw new IllegalArgumentException("Invalid recurrence type");
+        }
+        this.recurrenceType = type; 
+    }
+    
+    public void setRecurrenceCount(int count) { 
+        if (count < 0) {
+            throw new IllegalArgumentException("Recurrence count cannot be negative");
+        }
+        this.recurrenceCount = count; 
+    }
+    
+    public void setSeriesId(int seriesId) { 
+        this.seriesId = seriesId; 
+    }
+    
+    public void setReminderMinutes(int reminderMinutes) { 
+        if (reminderMinutes < 0) {
+            throw new IllegalArgumentException("Reminder minutes cannot be negative");
+        }
+        this.reminderMinutes = reminderMinutes; 
+    }
+
+    public long getDurationMinutes() {
+        return Duration.between(start, end).toMinutes();
+    }
+    
+    @Override
+    public String toString() {
+        return String.format("Event[%d]: %s (%s to %s)", 
+            eventId, title, start, end);
+    }
+}

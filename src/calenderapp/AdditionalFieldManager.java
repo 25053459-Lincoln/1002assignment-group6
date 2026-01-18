@@ -1,0 +1,152 @@
+package calenderapp;
+
+import java.io.*;
+import java.util.*;
+
+public class AdditionalFieldManager {
+    private static final String FILE = "data/additional.csv";
+    private static final String DELIMITER = "||";
+    private Map<Integer, AdditionalFields> fieldsMap = new HashMap<>();
+
+    public AdditionalFieldManager() {
+        loadFromFile();
+    }
+
+    // Add or update additional fields
+    public void saveFields(int eventId, String location, String category, String attendees) {
+        AdditionalFields f = new AdditionalFields(
+            location == null ? "" : location,
+            category == null ? "" : category,
+            attendees == null ? "" : attendees
+        );
+        fieldsMap.put(eventId, f);
+        writeAll();
+    }
+
+    // Get fields for a specific event
+    public AdditionalFields getFields(int eventId) {
+        return fieldsMap.get(eventId);
+    }
+    
+    // Delete fields for an event
+    public void deleteFields(int eventId) {
+        fieldsMap.remove(eventId);
+        writeAll();
+    }
+
+    // Search IDs by keyword
+    public List<Integer> searchIds(String keyword) {
+        List<Integer> ids = new ArrayList<>();
+        String lowerKeyword = keyword.toLowerCase();
+        
+        for (Map.Entry<Integer, AdditionalFields> entry : fieldsMap.entrySet()) {
+            AdditionalFields f = entry.getValue();
+            if ((f.location != null && f.location.toLowerCase().contains(lowerKeyword)) ||
+                (f.category != null && f.category.toLowerCase().contains(lowerKeyword)) ||
+                (f.attendees != null && f.attendees.toLowerCase().contains(lowerKeyword))) {
+                ids.add(entry.getKey());
+            }
+        }
+        return ids;
+    }
+
+    // Backup/Restore
+    public void backup(String backupFile) {
+        copy(FILE, backupFile);
+    }
+
+    public void restore(String backupFile) {
+        copy(backupFile, FILE);
+        loadFromFile();
+    }
+
+    // Helpers
+    private void loadFromFile() {
+        fieldsMap.clear();
+        File file = new File(FILE);
+        
+        // Ensure data directory exists
+        File dataDir = new File("data");
+        if (!dataDir.exists()) {
+            dataDir.mkdirs();
+        }
+        
+        if (!file.exists()) {
+            try {
+                file.createNewFile();
+                // Write header
+                try (PrintWriter pw = new PrintWriter(new FileWriter(FILE))) {
+                    pw.println("eventId" + DELIMITER + "location" + DELIMITER + 
+                              "category" + DELIMITER + "attendees");
+                }
+            } catch (IOException e) {
+                System.err.println("Failed to create additional fields file: " + e.getMessage());
+            }
+            return;
+        }
+        
+        try (BufferedReader br = new BufferedReader(new FileReader(FILE))) {
+            String line = br.readLine(); // skip header
+            while ((line = br.readLine()) != null) {
+                if (line.trim().isEmpty()) continue;
+                
+                String[] parts = line.split("\\|\\|", -1);
+if (parts.length == 4) {
+                    try {
+                        int id = Integer.parseInt(parts[0].trim());
+                        fieldsMap.put(id, new AdditionalFields(parts[1], parts[2], parts[3]));
+                    } catch (NumberFormatException e) {
+                        System.err.println("Invalid event ID in additional fields: " + parts[0]);
+                    }
+                }
+            }
+        } catch (IOException e) {
+            System.err.println("Error reading additional fields: " + e.getMessage());
+        }
+    }
+
+    private void writeAll() {
+        File dataDir = new File("data");
+        if (!dataDir.exists()) {
+            dataDir.mkdirs();
+        }
+        
+        try (PrintWriter pw = new PrintWriter(new FileWriter(FILE))) {
+            pw.println("eventId" + DELIMITER + "location" + DELIMITER + 
+                      "category" + DELIMITER + "attendees");
+            for (Map.Entry<Integer, AdditionalFields> entry : fieldsMap.entrySet()) {
+                AdditionalFields f = entry.getValue();
+                pw.println(entry.getKey() + DELIMITER + f.location + DELIMITER + 
+                          f.category + DELIMITER + f.attendees);
+            }
+        } catch (IOException e) {
+            System.err.println("Error writing additional fields: " + e.getMessage());
+        }
+    }
+
+    private void copy(String from, String to) {
+        try (FileInputStream fis = new FileInputStream(from);
+             FileOutputStream fos = new FileOutputStream(to)) {
+            byte[] buffer = new byte[1024];
+            int length;
+            while ((length = fis.read(buffer)) > 0) {
+                fos.write(buffer, 0, length);
+            }
+        } catch (IOException e) {
+            System.err.println("Error copying file: " + e.getMessage());
+        }
+    }
+
+    // AdditionalFields class
+    public static class AdditionalFields {
+        public String location;
+        public String category;
+        public String attendees;
+
+        public AdditionalFields(String location, String category, String attendees) {
+            this.location = location;
+            this.category = category;
+            this.attendees = attendees;
+        }
+    }
+}
